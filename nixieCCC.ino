@@ -1,5 +1,5 @@
 /*
- * C-Cubed: A combination Clock, Calender, and Calculator
+ * C-Cubed: A combination Clock, Calendar, and Calculator
  * Written by Charles "Charlie" "The Gnarly" Cook
  *
  * This program is designed for an Arduino Uno and/or an ATmega 328P
@@ -47,7 +47,7 @@
  * as the outer side of all buttons is ground, and pin 13 is a pulled-up
  * input pin. The clear button will also act as a mode-changing button;
  * When heled for half of a second (50 interrupts), the controller will
- * cycle through from clock mode, to calender mode, to calculator mode,
+ * cycle through from clock mode, to calendar mode, to calculator mode,
  * then back again.
 */
 
@@ -94,6 +94,7 @@
 const int timer1Comparison = 624;
 const int timer1Cycles = 50;
 const unsigned long timeMidnight 8640000;
+const byte[12] daysInAMonth = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 unsigned long timeUnit = 0;
 byte calendarDay = 1;
 byte calendarMonth = 1;
@@ -122,6 +123,8 @@ void clearDigit(byte digit);
 void setDigit(byte value, byte digit);
 void setTimeFlags(unsigned long time);
 void pushOldTimes(unsigned long time);
+bool isLeapYear(unsigned int year);
+bool isDayOverflowed(byte day, byte month, unsigned long year);
 
 // Setup Function
 void setup() {
@@ -152,9 +155,9 @@ void setup() {
 	// 0 to 624 inclusive. It's weird, but my scope shows this makes for a more accurate waveform frequency-wise.
 	TIMSK1 = 0x02; // Set only Bit 1 of the Timer1 Mask register so only the OCR1A interrupt will be generated
 	// Reset all digits
-	digitalWrite(RESCOM, HIGH);
-	delayMicroseconds(500);
-	digitalWrite(RESCOM, LOW);
+	for (tempByte = 0; tempByte < 8; tempByte++) {
+		clearDigit(tempByte);
+	}
 	// Re-enable interrupts to start the clock
 	interrupts();
 }
@@ -162,40 +165,59 @@ void setup() {
 // Interrupt Service Routine called when Timer1 generates a Compare-Match interrupt (from register A)
 ISR(TIMER1_COMPA_vect) {
 	TCNT1 = 0; // Reset Timer1
-	timeUnit++; // Increment the time unit counter
+	timeUnit = (timeUnit + 1) % timeMidnight; // Increment the time unit counter
 	timeChanged = true; // Set the time change flag
 }
 
 // Main Loop
 void loop() {
+	if (timeChanged) {
+		setTimeFlags(timeUnit);
+		addressNixieMux(HUNDRL);
+		pulsePin(CLKCOM);
+		if (rolloverSec) {
+			clearDigit(SECONH);
+			addressNixieMux(MINUTL);
+			pulsePin(CLKCOM);
+			rolloverSec = false;
+			if (rolloverMin) {
+				clearDigit(MINUTH);
+				tempByte = getHours(timeUnit);
+				setDigit(getLowDigit(tempByte), HOURSL);
+				setDigit(getHighDigit(tempByte), HOURSH);
+				rolloverMin = false;
+				if (rolloverHor) {
+					clearDigit(HOURSH);
+					clearDigit(HOURSL);
+					dateChanged = true;
+				}
+			}
+		}
+		pushOldTimes(timeUnit);
+		timeChanged = false;
+	}
+	if (dateChanged) {
+		calendarDay++;
+		if (isDayOverflowed(calendarDay, calendarMonth, calendarYear)) {
+			calendarDay = 1;
+			calendarMonth++;
+			if (calendarMonth == 13) {
+				calendarMonth = 1;
+				calendarYear++;
+			}
+		}
+	}
 	switch (mode) {
 		case MODECLOCK:
 			if (modeChanged) {
+			} 
+			break;
+		case MODECALEN:
+			if (modeChanged) {
 			}
-			else if (timeChanged) {
-				setTimeFlags(timeUnit);
-				addressNixieMux(HUNDRL);
-				pulsePin(CLKCOM);
-				if (rolloverSec) {
-					clearDigit(SECONH);
-					addressNixieMux(MINUTL);
-					pulsePin(CLKCOM);
-					rolloverSec = false;
-					if (rolloverMin) {
-						clearDigit(MINUTH);
-						tempByte = getHours(timeUnit);
-						setDigit(getLowDigit(tempByte), HOURSL);
-						setDigit(getHighDigit(tempByte), HOURSH);
-						rolloverMin = false;
-						if (rolloverHor) {
-							clearDigit(HOURSH);
-							clearDigit(HOURSL);
-							dateChanged = true;
-						}
-					}
-				}
-				pushOldTimes(timeUnit);
-				timeChanged = false;
+			break;
+		case MODECALCU:
+			if (modeChanged) {
 			}
 			break;
 	}
@@ -278,7 +300,7 @@ void setTimeFlags(unsigned long time) {
 		rolloverMin = false;
 	if (!rolloverMin) return;
 
-	getHours(time) < oldTimes[OLDMIN] ?
+	getHours(time) < oldTimes[OLDHOR] ?
 		rolloverHor = true :
 		rolloverHor = false;
 }
@@ -289,4 +311,21 @@ void pushOldTimes(unsigned long time) {
 	oldTimes[OLDSEC] = getSeconds(time);
 	oldTimes[OLDMIN] = getMinutes(time);
 	oldTimes[OLDHOR] = getHours(time);
+}
+
+bool isLeapYear(unsigned int year) {
+	return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+}
+
+bool isDayOverflowed(byte day, byte month, unsigned long year) {
+	bool standardDayOverflow = day > daysInAMonth[month];
+	if (isLeapYear(year)) {
+		if (month == 2) {
+			return days > 29;
+		} else {
+			return standardDayOverflow;
+		}
+	} else {
+		return standardDayOverflow;
+	}
 }
