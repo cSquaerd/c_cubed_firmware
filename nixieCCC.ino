@@ -206,6 +206,7 @@ void loop() {
 				calendarYear++;
 			}
 		}
+		dateChanged = false;
 	}
 	switch (mode) {
 		case MODECLOCK:
