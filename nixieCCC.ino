@@ -142,19 +142,33 @@ void setup() {
 
 	// Setup Timer1 as main clock signal generator
 	noInterrupts();
+
 	// The below register configurations set Timer1 to produce an interrupt every 10ms
-	TCCR1A = 0; // Clear any preset configurations in the first config register for Timer1
-	TCCR1B |= 0x04; // Set Bit 2 of the second config register for Timer1
-	TCCR1B &= 0xFC; // Clear Bits 1 and 0 of the second config register for Timer1
+	// Clear any preset configurations in the first config register for Timer1
+	TCCR1A = 0;
+	// Set Bit 2 of the second config register for Timer1
+	TCCR1B |= 0x04;
+	// Clear Bits 1 and 0 of the second config register for Timer1
+	TCCR1B &= 0xFC;
+
 	// Overall, TCCR1B[2:0] = 0b100, which enables a prescaler of x256.
 	// This means Timer1 will operate at 62.5kHz, thus it will have a 16us period.
-	TCNT1 = 0; // Reset Timer1
-	OCR1A = timer1Comparison; // Set Timer1 to generate an interrupt when it equals timer1Comparison
-	// By default, if timer1Comparison is 624, then an interrupt will occur every (625 * 16)us = 10,000us = 10ms.
-	// I swapped to 625 in the calculation because the counter starts at 0, meaning there are 625 cycles from
-	// 0 to 624 inclusive. It's weird, but my scope shows this makes for a more accurate waveform frequency-wise.
-	TIMSK1 = 0x02; // Set only Bit 1 of the Timer1 Mask register so only the OCR1A interrupt will be generated
-	// Reset all digits
+
+	// Reset Timer1
+	TCNT1 = 0;
+	// Set Timer1 to generate an interrupt when it equals timer1Comparison
+	OCR1A = timer1Comparison;
+
+	// By default, if timer1Comparison is 624, then an interrupt will occur every
+	// (625 * 16)us = 10,000us = 10ms. I swapped to 625 in the calculation because
+	// the counter starts at 0, meaning there are 625 cycles from 0 to 624
+	// inclusive. It's weird, but my scope shows this makes for a more
+	// accurate waveform frequency-wise.
+
+	// Set only Bit 1 of the Timer1 Mask register
+	// so only the OCR1A interrupt will be generated
+	TIMSK1 = 0x02;
+	// Reset all display digits
 	for (tempByte = 0; tempByte < 8; tempByte++) {
 		clearDigit(tempByte);
 	}
@@ -162,40 +176,21 @@ void setup() {
 	interrupts();
 }
 
-// Interrupt Service Routine called when Timer1 generates a Compare-Match interrupt (from register A)
+// Interrupt Service Routine called when Timer1 generates
+// a Compare-Match interrupt (from register A)
 ISR(TIMER1_COMPA_vect) {
-	TCNT1 = 0; // Reset Timer1
-	timeUnit = (timeUnit + 1) % timeMidnight; // Increment the time unit counter
-	timeChanged = true; // Set the time change flag
+	// Reset Timer1
+	TCNT1 = 0;
+	// Increment the time unit counter
+	timeUnit = (timeUnit + 1) % timeMidnight;
+	// Set the time change flag
+	timeChanged = true;
+	// Check whether to set the date change flag
+	timeUnit == 0 ? dateChanged = true : dateChanged = false;
 }
 
 // Main Loop
 void loop() {
-	if (timeChanged) {
-		setTimeFlags(timeUnit);
-		addressNixieMux(HUNDRL);
-		pulsePin(CLKCOM);
-		if (rolloverSec) {
-			clearDigit(SECONH);
-			addressNixieMux(MINUTL);
-			pulsePin(CLKCOM);
-			rolloverSec = false;
-			if (rolloverMin) {
-				clearDigit(MINUTH);
-				tempByte = getHours(timeUnit);
-				setDigit(getLowDigit(tempByte), HOURSL);
-				setDigit(getHighDigit(tempByte), HOURSH);
-				rolloverMin = false;
-				if (rolloverHor) {
-					clearDigit(HOURSH);
-					clearDigit(HOURSL);
-					dateChanged = true;
-				}
-			}
-		}
-		pushOldTimes(timeUnit);
-		timeChanged = false;
-	}
 	if (dateChanged) {
 		calendarDay++;
 		if (isDayOverflowed(calendarDay, calendarMonth, calendarYear)) {
@@ -211,14 +206,40 @@ void loop() {
 	switch (mode) {
 		case MODECLOCK:
 			if (modeChanged) {
-			} 
+				// Put mode change code here
+			} else if (timeChanged) {
+				setTimeFlags(timeUnit);
+				addressNixieMux(HUNDRL);
+				pulsePin(CLKCOM);
+				if (rolloverSec) {
+					clearDigit(SECONH);
+					addressNixieMux(MINUTL);
+					pulsePin(CLKCOM);
+					rolloverSec = false;
+					if (rolloverMin) {
+						clearDigit(MINUTH);
+						tempByte = getHours(timeUnit);
+						setDigit(getLowDigit(tempByte), HOURSL);
+						setDigit(getHighDigit(tempByte), HOURSH);
+						rolloverMin = false;
+						if (rolloverHor) {
+							clearDigit(HOURSH);
+							clearDigit(HOURSL);
+						}
+					}
+				}
+				pushOldTimes(timeUnit);
+				timeChanged = false;
+			}
 			break;
 		case MODECALEN:
 			if (modeChanged) {
+				// Put mode change code here
 			}
 			break;
 		case MODECALCU:
 			if (modeChanged) {
+				// Put mode change code here
 			}
 			break;
 	}
