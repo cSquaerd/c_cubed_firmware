@@ -52,6 +52,9 @@
 */
 
 // I/O Pin Definitions
+#define SSRSTB 1 // Status Shift Register Strobe
+#define SSRDAT 2 // ... Data
+#define SSRCLK 3 // Clock
 #define RESCOM 4 // Reset Common
 #define CLKCOM 5 // Clock Common
 #define NDADR0 6 // Nixie Driver Address Bit 0
@@ -115,6 +118,7 @@ bool rolloverHor = false;
 byte mode = MODECLOCK;
 byte tempByte;
 bool tempBool;
+long workingRegister, auxiliaryRegister, inputRegister;
 
 // Function Prototypes
 byte getHours(unsigned long time);
@@ -198,17 +202,21 @@ ISR(TIMER1_COMPA_vect) {
 
 // Main Loop
 void loop() {
+	// Date Change Handler
 	if (dateChanged) {
+		// Always increment the day
 		calendarDay++;
 		mode == MODECALEN ?
 			syncDates[SYNCDY] = true :
 			syncDates[SYNCDY] = false;
+		// Check if it's a new month
 		if (isDayOverflowed(calendarDay, calendarMonth, calendarYear)) {
 			calendarDay = 1;
 			calendarMonth++;
 			mode == MODECALEN ?
 				syncDates[SYNCMN] = true :
 				syncDates[SYNCMN] = false;
+			// Check if it's a new year
 			if (calendarMonth == 13) {
 				calendarMonth = 1;
 				calendarYear++;
@@ -219,9 +227,12 @@ void loop() {
 		}
 		dateChanged = false;
 	}
+	// Main Tube Display Routines
 	switch (mode) {
 		case MODECLOCK:
+			// Clock Entry Routine
 			if (modeChanged) {
+				noInterrupts();
 				pushOldTimes(timeUnit);
 				setDigit(getLowDigit(oldTimes[OLDHUN]), HUNDRL);
 				setDigit(getHighDigit(oldTimes[OLDHUN]), HUNDRH);
@@ -231,8 +242,10 @@ void loop() {
 				setDigit(getHighDigit(oldTimes[OLDMIN]), MINUTH);
 				setDigit(getLowDigit(oldTimes[OLDHOR]), HOURSL);
 				setDigit(getHighDigit(oldTimes[OLDHOR]), HOURSH);
+				interrupts();
 				modeChanged = false;
-			} else if (timeChanged) {
+			} else if (timeChanged) { // Clock Update Routine
+				noInterrupts();
 				setTimeFlags(timeUnit);
 				addressNixieMux(HUNDRL);
 				pulsePin(CLKCOM);
@@ -255,13 +268,24 @@ void loop() {
 				}
 				pushOldTimes(timeUnit);
 				timeChanged = false;
+				interrupts();
 			}
 			break;
 		case MODECALEN:
+			// Calendar Entry Routine
 			if (modeChanged) {
-				// Put mode change code here
+				noInterrupts();
+				setDigit(byte(calendarYear % 10), HUNDRL);
+				setDigit(byte((calendarYear % 100) / 10), HUNDRH);
+				setDigit(byte((calendarYear % 1000) / 100), SECONL);
+				setDigit(byte((calendarYear % 10000) / 1000), SECONH);
+				setDigit(getLowDigit(calendarDay), MINUTL);
+				setDigit(getHighDigit(calendarDay), MINUTH);
+				setDigit(getLowDigit(calendarMonth), HOURSL);
+				setDigit(getHighDigit(calendarMonth), HOURSH);
+				interrupts();
 				modeChanged = false;
-			} else if (syncDates[SYNCYR]) {
+			} else if (syncDates[SYNCYR]) { // Calendar Update Routines
 				addressNixieMux(HUNDRL);
 				pulsePin(CLKCOM);
 				setDigit(1, MINUTL);
@@ -285,10 +309,14 @@ void loop() {
 			}
 			break;
 		case MODECALCU:
+			// Calculator Entry Routine
 			if (modeChanged) {
-				// Put mode change code here
+				for (tempByte = 0; tempByte < 8; tempByte++) {
+					clearDigit(tempByte);
+				}
 				modeChanged = false;
 			}
+			// TODO: Program Main Calculator Routine
 			break;
 	}
 }
