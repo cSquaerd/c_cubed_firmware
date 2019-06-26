@@ -90,6 +90,11 @@
 #define OLDMIN 2
 #define OLDHOR 3
 
+// Date Sync Flag Addresses
+#define SYNCDY = 0;
+#define SYNCMN = 1;
+#define SYNCYR = 2;
+
 // Global Constants and Variables
 const int timer1Comparison = 624;
 const int timer1Cycles = 50;
@@ -103,11 +108,13 @@ byte[4] oldTimes;
 bool timeChanged = false;
 bool dateChanged = false;
 bool modeChanged = false;
+bool[3] syncDates = {false, false, false};
 bool rolloverSec = false;
 bool rolloverMin = false;
 bool rolloverHor = false;
 byte mode = MODECLOCK;
 byte tempByte;
+bool tempBool;
 
 // Function Prototypes
 byte getHours(unsigned long time);
@@ -193,12 +200,21 @@ ISR(TIMER1_COMPA_vect) {
 void loop() {
 	if (dateChanged) {
 		calendarDay++;
+		mode == MODECALEN ?
+			syncDates[SYNCDY] = true :
+			syncDates[SYNCDY] = false;
 		if (isDayOverflowed(calendarDay, calendarMonth, calendarYear)) {
 			calendarDay = 1;
 			calendarMonth++;
+			mode == MODECALEN ?
+				syncDates[SYNCMN] = true :
+				syncDates[SYNCMN] = false;
 			if (calendarMonth == 13) {
 				calendarMonth = 1;
 				calendarYear++;
+				mode == MODECALEN ?
+					syncDates[SYNCYR] = true :
+					syncDates[SYNCYR] = false;
 			}
 		}
 		dateChanged = false;
@@ -206,7 +222,16 @@ void loop() {
 	switch (mode) {
 		case MODECLOCK:
 			if (modeChanged) {
-				// Put mode change code here
+				pushOldTimes(timeUnit);
+				setDigit(getLowDigit(oldTimes[OLDHUN]), HUNDRL);
+				setDigit(getHighDigit(oldTimes[OLDHUN]), HUNDRH);
+				setDigit(getLowDigit(oldTimes[OLDSEC]), SECONL);;
+				setDigit(getHighDigit(oldTimes[OLDSEC]), SECONH);
+				setDigit(getLowDigit(oldTimes[OLDMIN]), MINUTL);
+				setDigit(getHighDigit(oldTimes[OLDMIN]), MINUTH);
+				setDigit(getLowDigit(oldTimes[OLDHOR]), HOURSL);
+				setDigit(getHighDigit(oldTimes[OLDHOR]), HOURSH);
+				modeChanged = false;
 			} else if (timeChanged) {
 				setTimeFlags(timeUnit);
 				addressNixieMux(HUNDRL);
@@ -235,11 +260,34 @@ void loop() {
 		case MODECALEN:
 			if (modeChanged) {
 				// Put mode change code here
+				modeChanged = false;
+			} else if (syncDates[SYNCYR]) {
+				addressNixieMux(HUNDRL);
+				pulsePin(CLKCOM);
+				setDigit(1, MINUTL);
+				clearDigit(MINUTH);
+				setDigit(1, HOURSL);
+				clearDigit(HOURSH);
+				syncDates[SYNCYR] = false;
+				syncDates[SYNCMN] = false;
+				syncDates[SYNCDY] = false;
+			} else if (syncDates[SYNCMN]) {
+				setDigit(getLowDigit(calendarMonth), HOURSL);
+				setDigit(getHighDigit(calendarMonth), HOURSH);
+				setDigit(1, MINUTL);
+				clearDigit(MINUTH);
+				syncDates[SYNCMN] = false;
+				syncDates[SYNCDY] = false;
+			} else if (syncDates[SYNCDY]) {
+				addressNixieMux(MINUTL);
+				pulsePin(CLKCOM);
+				syncDates[SYNCDY] = false;
 			}
 			break;
 		case MODECALCU:
 			if (modeChanged) {
 				// Put mode change code here
+				modeChanged = false;
 			}
 			break;
 	}
